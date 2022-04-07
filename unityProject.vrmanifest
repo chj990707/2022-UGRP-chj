@@ -1,0 +1,16 @@
+{
+  "source": "Unity",
+  "applications": [
+    {
+      "app_key": "application.generated.unity.2022ugrpchj.exe",
+      "launch_type": "url",
+      "url": "steam://launch/",
+      "action_manifest_path": "C:\\Users\\JYP\\Documents\\GitHub\\2022UGRP_CHJ\\2022 UGRP chj\\Assets\\StreamingAssets\\SteamVR\\actions.json",
+      "strings": {
+        "en_us": {
+          "name": "2022 UGRP chj [Testing]"
+        }
+      }
+    }
+  ]
+}
