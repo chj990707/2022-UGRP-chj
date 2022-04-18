@@ -2,8 +2,6 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
-
-using UnityEngine;
 using Valve.VR;
 
 namespace Valve.VR
@@ -70,6 +68,7 @@ namespace Valve.VR
                 transform.localPosition = pose.pos;
                 transform.localRotation = pose.rot;
             }
+            Debug.Log("Event position : " + pose.pos.ToString());
         }
 
         SteamVR_Events.Action newPosesAction;
@@ -100,6 +99,12 @@ namespace Valve.VR
         {
             newPosesAction.enabled = false;
             isValid = false;
+        }
+
+        private void Update()
+        {
+            Vector3 pos = SteamVR_Input.actionsPose[3].GetLocalPosition(SteamVR_Input_Sources.Any);
+            Debug.Log("Update position : "+ pos.ToString());
         }
 
         public void SetDeviceIndex(int index)
