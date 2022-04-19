@@ -103,7 +103,8 @@ namespace Valve.VR
 
         private void Update()
         {
-            Vector3 pos = SteamVR_Input.actionsPose[3].GetLocalPosition(SteamVR_Input_Sources.Any);
+            Vector3 pos = SteamVR_Input.GetPoseAction("actions/default/in/Pose").GetLocalPosition(SteamVR_Input_Sources.Head);
+            Debug.Log("Update pose : " + SteamVR_Input.GetPoseAction("actions/default/in/Pose").ToString());
             Debug.Log("Update position : "+ pos.ToString());
         }
 
