@@ -8,6 +8,10 @@ namespace Valve.VR
 {
     public class Custom_Tracked_Object : MonoBehaviour
     {
+        Vector3 vivePrevPos;
+        Vector3 viveVelocity;
+        float vivePrevTime;
+        float viveDeltaTime;
         public enum EIndex
         {
             None = -1,
@@ -32,9 +36,6 @@ namespace Valve.VR
 
         public EIndex index;
 
-        [Tooltip("If not set, relative to parent")]
-        public Transform origin;
-
         public bool isValid { get; private set; }
 
         private void OnNewPoses(TrackedDevicePose_t[] poses)
@@ -58,17 +59,12 @@ namespace Valve.VR
 
             var pose = new SteamVR_Utils.RigidTransform(poses[i].mDeviceToAbsoluteTracking);
 
-            if (origin != null)
-            {
-                transform.position = origin.transform.TransformPoint(pose.pos);
-                transform.rotation = origin.rotation * pose.rot;
-            }
-            else
-            {
-                transform.localPosition = pose.pos;
-                transform.localRotation = pose.rot;
-            }
-            Debug.Log("Event position : " + pose.pos.ToString());
+            transform.localPosition = pose.pos;
+            transform.localRotation = pose.rot;
+
+
+            //Debug.Log("Event position : " + transform.localPosition.ToString());
+            //Debug.Log("detaTime : " + deltaTime);
         }
 
         SteamVR_Events.Action newPosesAction;
@@ -91,7 +87,10 @@ namespace Valve.VR
                 enabled = false;
                 return;
             }
-
+            vivePrevTime = Time.realtimeSinceStartup;
+            viveDeltaTime = 100;
+            viveVelocity = Vector3.zero;
+            vivePrevPos = Vector3.zero;
             newPosesAction.enabled = true;
         }
 
@@ -101,11 +100,13 @@ namespace Valve.VR
             isValid = false;
         }
 
-        private void Update()
+        private void FixedUpdate()
         {
-            Vector3 pos = SteamVR_Input.GetPoseAction("actions/default/in/Pose").GetLocalPosition(SteamVR_Input_Sources.Head);
-            Debug.Log("Update pose : " + SteamVR_Input.GetPoseAction("actions/default/in/Pose").ToString());
-            Debug.Log("Update position : "+ pos.ToString());
+            viveDeltaTime = Time.realtimeSinceStartup - vivePrevTime;
+            viveVelocity = (transform.localPosition - vivePrevPos) / viveDeltaTime;
+            vivePrevPos = transform.localPosition;
+            vivePrevTime = Time.realtimeSinceStartup;
+            Debug.Log("Velocity : " + viveVelocity);
         }
 
         public void SetDeviceIndex(int index)
