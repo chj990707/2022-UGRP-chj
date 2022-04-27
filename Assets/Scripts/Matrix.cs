@@ -308,7 +308,7 @@ namespace CSML
         }
 
         /// <summary>
-        /// Creates m by n chessboard matrix with interchangíng ones and zeros.
+        /// Creates m by n chessboard matrix with interchang?g ones and zeros.
         /// 
         /// </summary>
         /// <param name="m">Number of rows.</param>
@@ -332,7 +332,7 @@ namespace CSML
         }
 
         /// <summary>
-        /// Creates m by n chessboard matrix with interchangíng ones and zeros.
+        /// Creates m by n chessboard matrix with interchang?g ones and zeros.
         /// 
         /// </summary>        
         /// <param name="n">Number of columns.</param>
@@ -3417,7 +3417,7 @@ namespace CSML
 
         #endregion
 
-        #region Virtualös
+        #region Virtual?
 
         /// <summary>
         /// Access the component in row i, column j of a non-empty matrix.

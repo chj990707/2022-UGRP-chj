@@ -1,6 +1,7 @@
 using UnityEngine;
 using System;
 using System.IO.Ports;
+using CSML;
 
 public class IMU_Sensor_Object : MonoBehaviour
 {
@@ -9,6 +10,18 @@ public class IMU_Sensor_Object : MonoBehaviour
     float imuPrevTime = 0;
     float imuDeltaTime = 0;
     int readLine = 0;
+    Matrix rot_A = new Matrix(4, 4);
+    Matrix rot_H = new Matrix(4, 4);
+    Matrix rot_K = new Matrix(4, 4);
+    Matrix rot_P = new Matrix(4, 4);
+    Matrix rot_P_p = new Matrix(4, 4);
+    Matrix rot_Q = new Matrix(4, 4);
+    Matrix rot_R = new Matrix(4, 4);
+
+    Matrix rot_z = new Matrix(4, 1);
+    Matrix rot_x = new Matrix(4, 1);
+    Matrix rot_x_p = new Matrix(4, 1);
+
 
     void Start()
     {
@@ -32,14 +45,15 @@ public class IMU_Sensor_Object : MonoBehaviour
             }
             catch(Exception e) { }
             if(readLine == 0) { return; }
+            Debug.Log(m_Data);
             string[] datas = m_Data.Split('/');
             imuDeltaTime = Time.realtimeSinceStartup - imuPrevTime;
-            //Debug.Log("delta Time : " + DeltaTime);
+            Debug.Log("delta Time : " + DeltaTime);
             Quaternion rot = Quaternion.Euler(transform.rotation.eulerAngles
-                + new Vector3(float.Parse(datas[0]) * imuDeltaTime, float.Parse(datas[1]) * imuDeltaTime, float.Parse(datas[2]) * imuDeltaTime));
+                + new Vector3(float.Parse(datas[0]) * 250f / 32768f * imuDeltaTime, float.Parse(datas[1]) * 250 / 32768f * imuDeltaTime, float.Parse(datas[2]) * 250f / 32768f * imuDeltaTime));
             Debug.Log("rotation : " + rot.eulerAngles);
             transform.rotation = rot;
-            Debug.Log("Acceleration : "+ (transform.rotation * ((new Vector3(float.Parse(datas[3]), float.Parse(datas[4]), float.Parse(datas[5]))))+new Vector3(0,1,0)).ToString() + "g");
+            Debug.Log("Acceleration : "+ (transform.rotation * ((new Vector3(float.Parse(datas[3]) / 16384f, float.Parse(datas[4])/ 16384f, float.Parse(datas[5]) / 16384f)))+new Vector3(0,1,0)).ToString() + "g");
             imuPrevTime = Time.realtimeSinceStartup;
         }
     }
@@ -47,5 +61,25 @@ public class IMU_Sensor_Object : MonoBehaviour
     void OnApplicationQuit()
     {
         m_SerialPort.Close();
+    }
+
+    Quaternion rotation_Kalman(Matrix A, Quaternion input)
+    {
+        rot_z = new Matrix(new double[,] { { input.x },{ input.y },{ input.z },{ input.w } });
+        //예측값 계산
+        rot_x_p = A * rot_x;
+        rot_P_p = A * rot_P * A.Transpose() + rot_Q;
+
+        //칼만 이득
+        rot_K = rot_P_p * rot_H.Transpose() * (rot_H * rot_P_p * rot_H.Transpose() + rot_R).Inverse();
+
+        //추정값
+        rot_x = rot_x_p + rot_K * (rot_z - rot_H * rot_x_p);
+
+        //오차 공분산
+        rot_P = rot_P_p - rot_K * rot_H * rot_P_p;
+
+        //반환
+        return new Quaternion((float)rot_x[1, 1].Re, (float)rot_x[2, 1].Re, (float)rot_x[3, 1].Re, (float)rot_x[4, 1].Re);
     }
 }
