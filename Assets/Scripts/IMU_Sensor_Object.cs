@@ -28,6 +28,11 @@ public class IMU_Sensor_Object : MonoBehaviour
         m_SerialPort.Open();
         imuPrevTime = Time.realtimeSinceStartup;
         tracker = GameObject.Find("Capsule");
+        rot_H = Matrix.Identity(4);
+        rot_Q = Matrix.Identity(4) * 10;
+        rot_R = Matrix.Identity(4) * 10;
+        rot_P = new Matrix(4,4);
+        rot_x = new Matrix(new double[,] { { transform.rotation.x }, { transform.rotation.y }, { transform.rotation.z }, { transform.rotation.w } });
     }
 
     private void FixedUpdate()
@@ -49,7 +54,7 @@ public class IMU_Sensor_Object : MonoBehaviour
             Debug.Log(m_Data);
             string[] datas = m_Data.Split('/');
             imuDeltaTime = Time.realtimeSinceStartup - imuPrevTime;
-            //Debug.Log("delta Time : " + imuDeltaTime);
+            Debug.Log("delta Time : " + imuDeltaTime);
             float gyro_x = float.Parse(datas[0]) * 250f / 32768f * imuDeltaTime;
             float gyro_y = float.Parse(datas[1]) * 250 / 32768f * imuDeltaTime;
             float gyro_z = float.Parse(datas[2]) * 250f / 32768f * imuDeltaTime;
