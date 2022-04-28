@@ -21,12 +21,13 @@ public class IMU_Sensor_Object : MonoBehaviour
     Matrix rot_z = new Matrix(4, 1);
     Matrix rot_x = new Matrix(4, 1);
     Matrix rot_x_p = new Matrix(4, 1);
-
+    GameObject tracker;
 
     void Start()
     {
         m_SerialPort.Open();
         imuPrevTime = Time.realtimeSinceStartup;
+        tracker = GameObject.Find("Capsule");
     }
 
     private void FixedUpdate()
@@ -48,12 +49,26 @@ public class IMU_Sensor_Object : MonoBehaviour
             Debug.Log(m_Data);
             string[] datas = m_Data.Split('/');
             imuDeltaTime = Time.realtimeSinceStartup - imuPrevTime;
-            Debug.Log("delta Time : " + DeltaTime);
+            //Debug.Log("delta Time : " + imuDeltaTime);
+            float gyro_x = float.Parse(datas[0]) * 250f / 32768f * imuDeltaTime;
+            float gyro_y = float.Parse(datas[1]) * 250 / 32768f * imuDeltaTime;
+            float gyro_z = float.Parse(datas[2]) * 250f / 32768f * imuDeltaTime;
+            float accel_x = float.Parse(datas[3]) / 16384f;
+            float accel_y = float.Parse(datas[4]) / 16384f;
+            float accel_z = float.Parse(datas[5]) / 16384f;
+
+            rot_A = new Matrix(new double[,]{ { 1,          - gyro_x / 2, -gyro_y / 2, -gyro_z / 2},
+                                              { gyro_x / 2, 1,             gyro_z / 2, -gyro_y / 2},
+                                              { gyro_y / 2, -gyro_z / 2, 1,            gyro_x / 2},
+                                              { gyro_z / 2,  gyro_y / 2,  -gyro_x / 2 , 1        } });
+            
+            //Debug.Log("Kalman : " + rotation_Kalman(rot_A, tracker.transform.rotation));
+            
             Quaternion rot = Quaternion.Euler(transform.rotation.eulerAngles
-                + new Vector3(float.Parse(datas[0]) * 250f / 32768f * imuDeltaTime, float.Parse(datas[1]) * 250 / 32768f * imuDeltaTime, float.Parse(datas[2]) * 250f / 32768f * imuDeltaTime));
+                + new Vector3(gyro_x, gyro_y, gyro_z));
             Debug.Log("rotation : " + rot.eulerAngles);
             transform.rotation = rot;
-            Debug.Log("Acceleration : "+ (transform.rotation * ((new Vector3(float.Parse(datas[3]) / 16384f, float.Parse(datas[4])/ 16384f, float.Parse(datas[5]) / 16384f)))+new Vector3(0,1,0)).ToString() + "g");
+            Debug.Log("Acceleration : "+ (transform.rotation * (new Vector3(accel_x, accel_y, accel_z))).ToString() + "g");
             imuPrevTime = Time.realtimeSinceStartup;
         }
     }
