@@ -2,6 +2,7 @@ using UnityEngine;
 using System;
 using System.IO.Ports;
 using CSML;
+using Valve.VR;
 
 public class IMU_Sensor_Object : MonoBehaviour
 {
@@ -10,6 +11,7 @@ public class IMU_Sensor_Object : MonoBehaviour
     float imuPrevTime = 0;
     float imuDeltaTime = 0;
     int readLine = 0;
+    
     Matrix rot_A = new Matrix(4, 4);
     Matrix rot_H = new Matrix(4, 4);
     Matrix rot_K = new Matrix(4, 4);
@@ -21,18 +23,40 @@ public class IMU_Sensor_Object : MonoBehaviour
     Matrix rot_z = new Matrix(4, 1);
     Matrix rot_x = new Matrix(4, 1);
     Matrix rot_x_p = new Matrix(4, 1);
+
+    Matrix vel_A = new Matrix(4, 4);
+    Matrix vel_H = new Matrix(4, 4);
+    Matrix vel_K = new Matrix(4, 4);
+    Matrix vel_P = new Matrix(4, 4);
+    Matrix vel_P_p = new Matrix(4, 4);
+    Matrix vel_Q = new Matrix(4, 4);
+    Matrix vel_R = new Matrix(4, 4);
+
+    Matrix vel_z = new Matrix(4, 1);
+    Matrix vel_x = new Matrix(4, 1);
+    Matrix vel_x_p = new Matrix(4, 1);
+
     GameObject tracker;
+    Custom_Tracked_Object tracker_script;
 
     void Start()
     {
         m_SerialPort.Open();
         imuPrevTime = Time.realtimeSinceStartup;
         tracker = GameObject.Find("Capsule");
+        tracker_script = tracker.GetComponent<Custom_Tracked_Object>();
         rot_H = Matrix.Identity(4);
-        rot_Q = Matrix.Identity(4) * 10;
-        rot_R = Matrix.Identity(4) * 10;
+        rot_Q = Matrix.Identity(4) * 0.1;
+        rot_R = Matrix.Identity(4) * 0.1;
         rot_P = new Matrix(4,4);
+
+        vel_H = Matrix.Identity(4);
+        vel_Q = Matrix.Identity(4) * 0.1;
+        vel_R = Matrix.Identity(4) * 0.1;
+        vel_P = new Matrix(4, 4);
+
         rot_x = new Matrix(new double[,] { { transform.rotation.x }, { transform.rotation.y }, { transform.rotation.z }, { transform.rotation.w } });
+        vel_x = new Matrix(new double[,] { { 0 },{ 0 },{ 0 },{ 1 } });
     }
 
     private void FixedUpdate()
@@ -66,9 +90,14 @@ public class IMU_Sensor_Object : MonoBehaviour
                                               { gyro_x / 2, 1,             gyro_z / 2, -gyro_y / 2},
                                               { gyro_y / 2, -gyro_z / 2, 1,            gyro_x / 2},
                                               { gyro_z / 2,  gyro_y / 2,  -gyro_x / 2 , 1        } });
-            
-            //Debug.Log("Kalman : " + rotation_Kalman(rot_A, tracker.transform.rotation));
-            
+
+            vel_A = new Matrix(new double[,] { { 1, 0, 0, accel_x * imuDeltaTime},
+                                               { 0, 1, 0, accel_y * imuDeltaTime},
+                                               { 0, 0, 1, accel_z * imuDeltaTime},
+                                               { 0, 0, 0, 1} });
+
+            //Debug.Log("Kalman rotation : " + rotation_Kalman(rot_A, tracker.transform.rotation));
+            //Debug.Log("Kalman Velocity : " + velocity_Kalman(vel_A, tracker_script.viveVelocity));
             Quaternion rot = Quaternion.Euler(transform.rotation.eulerAngles
                 + new Vector3(gyro_x, gyro_y, gyro_z));
             Debug.Log("rotation : " + rot.eulerAngles);
@@ -101,5 +130,25 @@ public class IMU_Sensor_Object : MonoBehaviour
 
         //반환
         return new Quaternion((float)rot_x[1, 1].Re, (float)rot_x[2, 1].Re, (float)rot_x[3, 1].Re, (float)rot_x[4, 1].Re);
+    }
+
+    Vector3 velocity_Kalman(Matrix A, Vector3 input)
+    {
+        vel_z = new Matrix(new double[,] { { input.x }, { input.y }, { input.z }, { 1 } });
+        //예측값 계산
+        vel_x_p = A * vel_x;
+        vel_P_p = A * vel_P * A.Transpose() + vel_Q;
+
+        //칼만 이득
+        vel_K = vel_P_p * vel_H.Transpose() * (vel_H * vel_P_p * vel_H.Transpose() + vel_R).Inverse();
+
+        //추정값
+        vel_x = vel_x_p + vel_K * (vel_z - vel_H * vel_x_p);
+
+        //오차 공분산
+        vel_P = vel_P_p - vel_K * vel_H * vel_P_p;
+
+        //반환
+        return new Vector3((float)vel_x[1, 1].Re, (float)vel_x[2, 1].Re, (float)vel_x[3, 1].Re);
     }
 }

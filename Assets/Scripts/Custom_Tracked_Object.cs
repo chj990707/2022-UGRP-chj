@@ -9,7 +9,7 @@ namespace Valve.VR
     public class Custom_Tracked_Object : MonoBehaviour
     {
         Vector3 vivePrevPos;
-        Vector3 viveVelocity;
+        public Vector3 viveVelocity { get; private set; }
         float vivePrevTime;
         float viveDeltaTime;
         public enum EIndex
@@ -106,7 +106,7 @@ namespace Valve.VR
             viveVelocity = (transform.localPosition - vivePrevPos) / viveDeltaTime;
             vivePrevPos = transform.localPosition;
             vivePrevTime = Time.realtimeSinceStartup;
-            Debug.Log("Velocity : " + viveVelocity);
+            //Debug.Log("Velocity : " + viveVelocity);
         }
 
         public void SetDeviceIndex(int index)
