@@ -24,17 +24,17 @@ public class IMU_Sensor_Object : MonoBehaviour
     Matrix rot_x = new Matrix(4, 1);
     Matrix rot_x_p = new Matrix(4, 1);
 
-    Matrix vel_A = new Matrix(4, 4);
-    Matrix vel_H = new Matrix(4, 4);
-    Matrix vel_K = new Matrix(4, 4);
-    Matrix vel_P = new Matrix(4, 4);
-    Matrix vel_P_p = new Matrix(4, 4);
-    Matrix vel_Q = new Matrix(4, 4);
-    Matrix vel_R = new Matrix(4, 4);
+    Matrix vel_A = new Matrix(3,3);
+    Matrix vel_H = new Matrix(3,3);
+    Matrix vel_K = new Matrix(3,3);
+    Matrix vel_P = new Matrix(3,3);
+    Matrix vel_P_p = new Matrix(3,3);
+    Matrix vel_Q = new Matrix(3,3);
+    Matrix vel_R = new Matrix(3,3);
 
-    Matrix vel_z = new Matrix(4, 1);
-    Matrix vel_x = new Matrix(4, 1);
-    Matrix vel_x_p = new Matrix(4, 1);
+    Matrix vel_z = new Matrix(3, 1);
+    Matrix vel_x = new Matrix(3, 1);
+    Matrix vel_x_p = new Matrix(3, 1);
 
     GameObject tracker;
     Custom_Tracked_Object tracker_script;
@@ -50,13 +50,13 @@ public class IMU_Sensor_Object : MonoBehaviour
         rot_R = Matrix.Identity(4) * 0.1;
         rot_P = new Matrix(4,4);
 
-        vel_H = Matrix.Identity(4);
-        vel_Q = Matrix.Identity(4) * 0.1;
-        vel_R = Matrix.Identity(4) * 0.1;
-        vel_P = new Matrix(4, 4);
+        vel_H = Matrix.Identity(3);
+        vel_Q = Matrix.Identity(3) * 0.1;
+        vel_R = Matrix.Identity(3) * 0.1;
+        vel_P = new Matrix(3, 3);
 
         rot_x = new Matrix(new double[,] { { transform.rotation.x }, { transform.rotation.y }, { transform.rotation.z }, { transform.rotation.w } });
-        vel_x = new Matrix(new double[,] { { 0 },{ 0 },{ 0 },{ 1 } });
+        vel_x = new Matrix(new double[,] { { 0 },{ 0 },{ 0 } });
     }
 
     private void FixedUpdate()
@@ -85,19 +85,19 @@ public class IMU_Sensor_Object : MonoBehaviour
             float accel_x = float.Parse(datas[3]) / 16384f;
             float accel_y = float.Parse(datas[4]) / 16384f;
             float accel_z = float.Parse(datas[5]) / 16384f;
+            Vector3 accel = new Vector3(accel_x, accel_y, accel_z);
 
             rot_A = new Matrix(new double[,]{ { 1,          - gyro_x / 2, -gyro_y / 2, -gyro_z / 2},
                                               { gyro_x / 2, 1,             gyro_z / 2, -gyro_y / 2},
                                               { gyro_y / 2, -gyro_z / 2, 1,            gyro_x / 2},
                                               { gyro_z / 2,  gyro_y / 2,  -gyro_x / 2 , 1        } });
 
-            vel_A = new Matrix(new double[,] { { 1, 0, 0, accel_x * imuDeltaTime},
-                                               { 0, 1, 0, accel_y * imuDeltaTime},
-                                               { 0, 0, 1, accel_z * imuDeltaTime},
-                                               { 0, 0, 0, 1} });
+            vel_A = new Matrix(new double[,] { { 1, 0, 0},
+                                               { 0, 1, 0},
+                                               { 0, 0, 1}});
 
             //Debug.Log("Kalman rotation : " + rotation_Kalman(rot_A, tracker.transform.rotation));
-            //Debug.Log("Kalman Velocity : " + velocity_Kalman(vel_A, tracker_script.viveVelocity));
+            Debug.Log("Kalman Velocity : " + velocity_Kalman(vel_A, tracker_script.viveVelocity, accel, imuDeltaTime));
             Quaternion rot = Quaternion.Euler(transform.rotation.eulerAngles
                 + new Vector3(gyro_x, gyro_y, gyro_z));
             Debug.Log("rotation : " + rot.eulerAngles);
@@ -132,12 +132,16 @@ public class IMU_Sensor_Object : MonoBehaviour
         return new Quaternion((float)rot_x[1, 1].Re, (float)rot_x[2, 1].Re, (float)rot_x[3, 1].Re, (float)rot_x[4, 1].Re);
     }
 
-    Vector3 velocity_Kalman(Matrix A, Vector3 input)
+    Vector3 velocity_Kalman(Matrix A, Vector3 velocity, Vector3 accel, float T)
     {
-        vel_z = new Matrix(new double[,] { { input.x }, { input.y }, { input.z }, { 1 } });
+        vel_z = new Matrix(new double[,] { { velocity.x }, { velocity.y }, { velocity.z } });
+        Matrix acc_z = new Matrix(new double[,] { { accel.x * T }, { accel.y * T }, { accel.z * T } });
         //예측값 계산
-        vel_x_p = A * vel_x;
-        vel_P_p = A * vel_P * A.Transpose() + vel_Q;
+        //vel_x_p = A * vel_x + acc_z;
+        //vel_P_p = A * vel_P * A.Transpose() + vel_Q;
+        //현재 모델에서 A가 Identity이기 때문에 생략함
+        vel_x_p = vel_x + acc_z;
+        vel_P_p = vel_P + vel_Q;
 
         //칼만 이득
         vel_K = vel_P_p * vel_H.Transpose() * (vel_H * vel_P_p * vel_H.Transpose() + vel_R).Inverse();
