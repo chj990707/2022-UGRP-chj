@@ -6,6 +6,8 @@ using Valve.VR;
 
 public class IMU_Sensor_Object : MonoBehaviour
 {
+    public bool syncRotWithTracker = false;
+
     SerialPort m_SerialPort = new SerialPort("COM6", 38400, Parity.None, 8, StopBits.One);
     string m_Data = null;
     float imuPrevTime = 0;
@@ -64,7 +66,7 @@ public class IMU_Sensor_Object : MonoBehaviour
         readLine = 0;
         if (m_SerialPort.IsOpen)
         {
-            m_SerialPort.ReadTimeout = 10;
+            m_SerialPort.ReadTimeout = 5;
             try
             {
                 while (true)
@@ -75,34 +77,53 @@ public class IMU_Sensor_Object : MonoBehaviour
             }
             catch(Exception e) { }
             if(readLine == 0) { return; }
-            Debug.Log(m_Data);
+            //Debug.Log(m_Data);
             string[] datas = m_Data.Split('/');
             imuDeltaTime = Time.realtimeSinceStartup - imuPrevTime;
             Debug.Log("delta Time : " + imuDeltaTime);
-            float gyro_x = float.Parse(datas[0]) * 250f / 32768f * imuDeltaTime;
-            float gyro_y = float.Parse(datas[1]) * 250 / 32768f * imuDeltaTime;
-            float gyro_z = float.Parse(datas[2]) * 250f / 32768f * imuDeltaTime;
+            float gyro_pitch = float.Parse(datas[1]) * 250f / 32768f * imuDeltaTime;
+            float gyro_roll = float.Parse(datas[0]) * 250f / 32768f * imuDeltaTime;
+            float gyro_yaw = -float.Parse(datas[2]) * 250f / 32768f * imuDeltaTime; // vive와 imu의 축 일치시키기 위해 순서 변경.
             float accel_x = float.Parse(datas[3]) / 16384f;
             float accel_y = float.Parse(datas[4]) / 16384f;
             float accel_z = float.Parse(datas[5]) / 16384f;
-            Vector3 accel = new Vector3(accel_x, accel_y, accel_z);
 
-            rot_A = new Matrix(new double[,]{ { 1,          - gyro_x / 2, -gyro_y / 2, -gyro_z / 2},
-                                              { gyro_x / 2, 1,             gyro_z / 2, -gyro_y / 2},
-                                              { gyro_y / 2, -gyro_z / 2, 1,            gyro_x / 2},
-                                              { gyro_z / 2,  gyro_y / 2,  -gyro_x / 2 , 1        } });
+            rot_A = new Matrix(new double[,]{ { 1,          - gyro_pitch / 2, -gyro_roll / 2, -gyro_yaw / 2},
+                                              { gyro_pitch / 2, 1,             gyro_yaw / 2, -gyro_roll / 2},
+                                              { gyro_roll / 2, -gyro_yaw / 2, 1,            gyro_pitch / 2},
+                                              { gyro_yaw / 2,  gyro_roll / 2,  -gyro_pitch / 2 , 1        } });
 
             vel_A = new Matrix(new double[,] { { 1, 0, 0},
                                                { 0, 1, 0},
                                                { 0, 0, 1}});
 
-            //Debug.Log("Kalman rotation : " + rotation_Kalman(rot_A, tracker.transform.rotation));
-            Debug.Log("Kalman Velocity : " + velocity_Kalman(vel_A, tracker_script.viveVelocity, accel, imuDeltaTime));
-            Quaternion rot = Quaternion.Euler(transform.rotation.eulerAngles
-                + new Vector3(gyro_x, gyro_y, gyro_z));
-            Debug.Log("rotation : " + rot.eulerAngles);
-            transform.rotation = rot;
-            Debug.Log("Acceleration : "+ (transform.rotation * (new Vector3(accel_x, accel_y, accel_z))).ToString() + "g");
+            Quaternion rot = transform.rotation * Quaternion.Euler(gyro_pitch, gyro_roll, gyro_yaw);
+            Quaternion kalman_rot = rotation_Kalman(rot_A, tracker.transform.rotation);
+            //Debug.Log("Kalman rotation : " + kalman_rot.eulerAngles);
+            //Debug.Log("rotation : " + rot.eulerAngles);
+            //Debug.Log("Kalman Velocity : " + );
+            if (syncRotWithTracker)
+            {
+                transform.rotation = tracker.transform.rotation;
+            }   
+            else transform.rotation = kalman_rot;
+
+            //Debug.Log("left handed 가속도 : " + ((-new Vector3(-accel_y, -accel_x, accel_z))).ToString() + "g");
+            //Debug.Log("global 가속도 : " + (transform.rotation * (-new Vector3(-accel_y, -accel_x, accel_z))).ToString() + "g"); // 왜 inverse가 아닌가?
+            //Debug.Log("Global 기준 IMU의 y축 : " + (transform.rotation * (new Vector3(0, 1, 0))).ToString());
+            Vector3 accel = (kalman_rot * (-new Vector3(-accel_y, -accel_x, accel_z)) + new Vector3(0,1,0)) * 9.8f;
+
+            Debug.Log("global 가속도(g 보상) : " + accel.ToString() + "m/s^2");
+
+            Vector3 kalman_vel = velocity_Kalman(vel_A, tracker_script.viveVelocity, accel, imuDeltaTime);
+            Debug.Log("global 속도(칼만) : " + kalman_vel.ToString() + "m/s");
+
+            if (syncRotWithTracker)
+            {
+                transform.position = tracker.transform.position;
+            }
+            else transform.position = transform.position + kalman_vel * imuDeltaTime;
+
             imuPrevTime = Time.realtimeSinceStartup;
         }
     }
@@ -118,7 +139,6 @@ public class IMU_Sensor_Object : MonoBehaviour
         //예측값 계산
         rot_x_p = A * rot_x;
         rot_P_p = A * rot_P * A.Transpose() + rot_Q;
-
         //칼만 이득
         rot_K = rot_P_p * rot_H.Transpose() * (rot_H * rot_P_p * rot_H.Transpose() + rot_R).Inverse();
 
