@@ -8,6 +8,7 @@ using System.Collections;
 public class IMU_Sensor_Object : MonoBehaviour
 {
     public bool syncRotWithTracker = false;
+    public bool use_LPF_gyro = false;
 
     SerialPort m_SerialPort = new SerialPort("COM6", 38400, Parity.None, 8, StopBits.One);
     string m_Data = null;
@@ -16,7 +17,10 @@ public class IMU_Sensor_Object : MonoBehaviour
     float posPrevTime = 0;
     float posDeltaTime = 0;
     int readLine = 0;
-    
+
+    Vector3 rot_LPF_x = new Vector3(0,0,0);
+    float LPF_alpha = 0.7f;
+
     Matrix rot_A = new Matrix(4, 4);
     Matrix rot_H = new Matrix(4, 4);
     Matrix rot_K = new Matrix(4, 4);
@@ -62,6 +66,7 @@ public class IMU_Sensor_Object : MonoBehaviour
         vel_R = Matrix.Identity(3) * 0.1;
         vel_P = new Matrix(3, 3);
 
+        rot_LPF_x = transform.rotation.eulerAngles;
         rot_x = new Matrix(new double[,] { { transform.rotation.x }, { transform.rotation.y }, { transform.rotation.z }, { transform.rotation.w } });
         vel_x = new Matrix(new double[,] { { 0 },{ 0 },{ 0 } });
     }
@@ -82,18 +87,33 @@ public class IMU_Sensor_Object : MonoBehaviour
         float accel_x = float.Parse(datas[3]) / 16384f;
         float accel_y = float.Parse(datas[4]) / 16384f;
         float accel_z = float.Parse(datas[5]) / 16384f;
+        //IMU의 가속도 센서와 자이로 센서로부터 현재 각도를 추정해야 함.
+        //VR 트래커는 손에 들고 사용할 것을 가정하기 때문에 움직임에서 큰 가속도가 발생할 것으로 예상됨.
+        //1. low-pass filter로 잡음을 제거한 자이로 센서만 사용하기
+        //2. kalman fusion을 사용해 자이로와 가속도계 융합하기(단, 가속도 벡터를 normalize)
 
-        rot_A = new Matrix(new double[,]{ { 1,          - gyro_pitch / 2, -gyro_roll / 2, -gyro_yaw / 2},
+        if (syncRotWithTracker)
+        {
+            transform.rotation = tracker.transform.rotation;
+        }
+        else if (use_LPF_gyro)
+        {
+            transform.rotation = transform.rotation * Quaternion.Euler(LPF_rotation_IMU(new Vector3(gyro_pitch, gyro_roll, gyro_yaw)));
+        }
+        else 
+        {
+            rot_A = new Matrix(new double[,]{ { 1,          - gyro_pitch / 2, -gyro_roll / 2, -gyro_yaw / 2},
                                               { gyro_pitch / 2, 1,             gyro_yaw / 2, -gyro_roll / 2},
                                               { gyro_roll / 2, -gyro_yaw / 2, 1,            gyro_pitch / 2},
                                               { gyro_yaw / 2,  gyro_roll / 2,  -gyro_pitch / 2 , 1        } });
+            Vector3 normalized_acc = Vector3.Normalize(new Vector3(-accel_y, -accel_x, accel_z));
+            double acc_pitch = Math.Asin(normalized_acc.x);
+            double acc_roll = Math.Asin(-normalized_acc.y / Math.Cos(acc_pitch));
+            Quaternion acc_quaternion = Quaternion.Euler((float)acc_pitch, (float)acc_roll, transform.rotation.eulerAngles.z);
 
-        vel_A = new Matrix(new double[,] { { 1, 0, 0},
-                                               { 0, 1, 0},
-                                               { 0, 0, 1}});
-
-        Quaternion rot = transform.rotation * Quaternion.Euler(gyro_pitch, gyro_roll, gyro_yaw);
-        Quaternion kalman_rot = Kalman_rotation_IMU(rot_A, Quaternion.Euler(gyro_pitch, gyro_roll, gyro_yaw));
+            Quaternion kalman_rot = Kalman_rotation_IMU(rot_A, acc_quaternion);
+            transform.rotation = kalman_rot; 
+        }
         //Debug.Log("Kalman rotation : " + kalman_rot.eulerAngles);
         //Debug.Log("rotation : " + rot.eulerAngles);
         //Debug.Log("Kalman Velocity : " + );
@@ -101,12 +121,14 @@ public class IMU_Sensor_Object : MonoBehaviour
         //Debug.Log("left handed 가속도 : " + ((-new Vector3(-accel_y, -accel_x, accel_z))).ToString() + "g");
         //Debug.Log("global 가속도 : " + (transform.rotation * (-new Vector3(-accel_y, -accel_x, accel_z))).ToString() + "g"); // 왜 inverse가 아닌가?
         //Debug.Log("Global 기준 IMU의 y축 : " + (transform.rotation * (new Vector3(0, 1, 0))).ToString());
-        Vector3 accel = (kalman_rot * (-new Vector3(-accel_y, -accel_x, accel_z)) + new Vector3(0, 1, 0)) * 9.8f;
+        vel_A = new Matrix(new double[,] { { 1, 0, 0},
+                                               { 0, 1, 0},
+                                               { 0, 0, 1}});
+        Vector3 accel = (transform.rotation * (-new Vector3(-accel_y, -accel_x, accel_z)) + new Vector3(0, 1, 0)) * 9.8f;
 
         Debug.Log("global 가속도(g 보상) : " + accel.ToString() + "m/s^2");
 
         Vector3 kalman_vel = velocity_Kalman(vel_A, tracker_script.viveVelocity, accel, rotDeltaTime);
-        Debug.Log("global 속도(칼만) : " + kalman_vel.ToString() + "m/s");
 
         if (syncRotWithTracker)
         {
@@ -140,14 +162,14 @@ public class IMU_Sensor_Object : MonoBehaviour
 
         Quaternion kalman_rot = new Quaternion((float)rot_x[1, 1].Re, (float)rot_x[2, 1].Re, (float)rot_x[3, 1].Re, (float)rot_x[4, 1].Re);
 
-        if (syncRotWithTracker)
-        {
-            transform.rotation = tracker.transform.rotation;
-        }
-        else transform.rotation = kalman_rot;
-
         //반환
         return kalman_rot;
+    }
+
+    Vector3 LPF_rotation_IMU(Vector3 Input)
+    {
+        rot_LPF_x = LPF_alpha * rot_LPF_x + (1 - LPF_alpha) * Input;
+        return rot_LPF_x;
     }
 
     Vector3 velocity_Kalman(Matrix A, Vector3 velocity, Vector3 accel, float T)
