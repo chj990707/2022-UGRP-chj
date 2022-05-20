@@ -33,17 +33,24 @@ public class IMU_Sensor_Object : MonoBehaviour
     Matrix rot_x = new Matrix(4, 1);
     Matrix rot_x_p = new Matrix(4, 1);
 
-    Matrix vel_A = new Matrix(3,3);
-    Matrix vel_H = new Matrix(3,3);
-    Matrix vel_K = new Matrix(3,3);
-    Matrix vel_P = new Matrix(3,3);
-    Matrix vel_P_p = new Matrix(3,3);
-    Matrix vel_Q = new Matrix(3,3);
-    Matrix vel_R = new Matrix(3,3);
+    Matrix pos_A = new Matrix(9,9);
+    Matrix pos_H_acc = new Matrix(3, 9);
+    Matrix pos_Q_acc = new Matrix(9, 9);
+    Matrix pos_R_acc = new Matrix(3, 3);
+    Matrix pos_K_acc = new Matrix(9, 9);
+    Matrix pos_P_acc = new Matrix(9, 9);
+    Matrix pos_P_p_acc = new Matrix(9, 9);
 
-    Matrix vel_z = new Matrix(3, 1);
-    Matrix vel_x = new Matrix(3, 1);
-    Matrix vel_x_p = new Matrix(3, 1);
+    Matrix pos_H_trk = new Matrix(3, 9);
+    Matrix pos_Q_trk = new Matrix(9, 9);
+    Matrix pos_R_trk = new Matrix(3, 3);
+    Matrix pos_K_trk = new Matrix(9, 9);
+    Matrix pos_P_trk = new Matrix(9, 9);
+    Matrix pos_P_p_trk = new Matrix(9, 9);
+
+    Matrix acc_z = new Matrix(3, 1);
+    Matrix pos_x = new Matrix(9, 1);
+    Matrix pos_x_p = new Matrix(9, 1);
 
     GameObject tracker;
     Custom_Tracked_Object tracker_script;
@@ -61,14 +68,23 @@ public class IMU_Sensor_Object : MonoBehaviour
         rot_R = Matrix.Identity(4) * 0.1;
         rot_P = new Matrix(4,4);
 
-        vel_H = Matrix.Identity(3);
-        vel_Q = Matrix.Identity(3) * 0.1;
-        vel_R = Matrix.Identity(3) * 0.1;
-        vel_P = new Matrix(3, 3);
+        pos_H_acc = new Matrix(new double[,]{ { 0, 0, 0, 0, 0, 0, 1, 0, 0},
+                                              { 0, 0, 0, 0, 0, 0, 0, 1, 0},
+                                              { 0, 0, 0, 0, 0, 0, 0, 0, 1}});
+        pos_Q_acc = Matrix.Identity(9) * 0.1;
+        pos_R_acc = Matrix.Identity(3) * 0.1;
+        pos_P_acc = new Matrix(9, 9);
+
+        pos_H_trk = new Matrix(new double[,]{ { 1, 0, 0, 0, 0, 0, 0, 0, 0},
+                                              { 0, 1, 0, 0, 0, 0, 0, 0, 0},
+                                              { 0, 0, 1, 0, 0, 0, 0, 0, 0}});
+        pos_Q_trk = Matrix.Identity(9) * 0.1;
+        pos_R_trk = Matrix.Identity(3) * 0.1;
+        pos_P_trk = new Matrix(9, 9);
 
         rot_LPF_x = transform.rotation.eulerAngles;
         rot_x = new Matrix(new double[,] { { transform.rotation.x }, { transform.rotation.y }, { transform.rotation.z }, { transform.rotation.w } });
-        vel_x = new Matrix(new double[,] { { 0 },{ 0 },{ 0 } });
+        pos_x = new Matrix(new double[,] { { 0 }, { 0 }, { 0 }, { 0 }, { 0 }, { 0 }, { 0 }, { 0 }, { 0 } });
     }
     void OnIMUReceived(object sender, SerialDataReceivedEventArgs e)
     {
@@ -121,14 +137,28 @@ public class IMU_Sensor_Object : MonoBehaviour
         //Debug.Log("left handed 가속도 : " + ((-new Vector3(-accel_y, -accel_x, accel_z))).ToString() + "g");
         //Debug.Log("global 가속도 : " + (transform.rotation * (-new Vector3(-accel_y, -accel_x, accel_z))).ToString() + "g"); // 왜 inverse가 아닌가?
         //Debug.Log("Global 기준 IMU의 y축 : " + (transform.rotation * (new Vector3(0, 1, 0))).ToString());
-        vel_A = new Matrix(new double[,] { { 1, 0, 0},
+        pos_A = new Matrix(new double[,] { { 1, 0, 0},
                                                { 0, 1, 0},
                                                { 0, 0, 1}});
+
+        //방향 맞는지 다시 확인 필요
+        throw new NotImplementedException();
         Vector3 accel = (transform.rotation * (-new Vector3(-accel_y, -accel_x, accel_z)) + new Vector3(0, 1, 0)) * 9.8f;
 
         Debug.Log("global 가속도(g 보상) : " + accel.ToString() + "m/s^2");
 
-        Vector3 kalman_vel = velocity_Kalman(vel_A, tracker_script.viveVelocity, accel, rotDeltaTime);
+
+        pos_A = new Matrix(new double[,]{ { 1, 0, 0, posDeltaTime, 0, 0, 0.5f*posDeltaTime*posDeltaTime, 0, 0},
+                                          { 0, 1, 0, 0, posDeltaTime, 0, 0, 0.5f*posDeltaTime*posDeltaTime, 0},
+                                          { 0, 0, 1, 0, 0, posDeltaTime, 0, 0, 0.5f*posDeltaTime*posDeltaTime},
+                                          { 0, 0, 0, 1, 0, 0, posDeltaTime, 0, 0},
+                                          { 0, 0, 0, 0, 1, 0, 0, posDeltaTime, 0},
+                                          { 0, 0, 0, 0, 0, 1, 0, 0, posDeltaTime},
+                                          { 0, 0, 0, 0, 0, 0, 1, 0, 0},
+                                          { 0, 0, 0, 0, 0, 0, 0, 1, 0},
+                                          { 0, 0, 0, 0, 0, 0, 0, 0, 1}});
+
+        Vector3 kalman_vel = Kalman_position_IMU(pos_A, accel);
 
         if (syncRotWithTracker)
         {
@@ -172,27 +202,44 @@ public class IMU_Sensor_Object : MonoBehaviour
         return rot_LPF_x;
     }
 
-    Vector3 velocity_Kalman(Matrix A, Vector3 velocity, Vector3 accel, float T)
+    Vector3 Kalman_position_IMU(Matrix A, Vector3 accel)
     {
-        vel_z = new Matrix(new double[,] { { velocity.x }, { velocity.y }, { velocity.z } });
-        Matrix acc_z = new Matrix(new double[,] { { accel.x * T }, { accel.y * T }, { accel.z * T } });
+        Matrix acc_z = new Matrix(new double[,] { { 0, 0, 0, 0, 0, 0, accel.x, accel.y, accel.z } }).Transpose();
         //예측값 계산
         //vel_x_p = A * vel_x + acc_z;
         //vel_P_p = A * vel_P * A.Transpose() + vel_Q;
-        //현재 모델에서 A가 Identity이기 때문에 생략함
-        vel_x_p = vel_x + acc_z;
-        vel_P_p = vel_P + vel_Q;
+        pos_x_p = A * pos_x;
+        pos_P_p_acc = A * pos_P_acc * A.Transpose() + pos_Q_acc;
 
         //칼만 이득
-        vel_K = vel_P_p * vel_H.Transpose() * (vel_H * vel_P_p * vel_H.Transpose() + vel_R).Inverse();
+        pos_K_acc = pos_P_p_acc * pos_H_acc.Transpose() * (pos_H_acc * pos_P_p_acc * pos_H_acc.Transpose() + pos_R_acc).Inverse();
 
         //추정값
-        vel_x = vel_x_p + vel_K * (vel_z - vel_H * vel_x_p);
+        pos_x = pos_x_p + pos_K_acc * (this.acc_z - pos_H_acc * pos_x_p);
 
         //오차 공분산
-        vel_P = vel_P_p - vel_K * vel_H * vel_P_p;
+        pos_P_acc = pos_P_p_acc - pos_K_acc * pos_H_acc * pos_P_p_acc;
 
         //반환
-        return new Vector3((float)vel_x[1, 1].Re, (float)vel_x[2, 1].Re, (float)vel_x[3, 1].Re);
+        return new Vector3((float)pos_x[1, 1].Re, (float)pos_x[2, 1].Re, (float)pos_x[3, 1].Re);
+    }
+    public Vector3 Kalman_position_TRK(Matrix A, Vector3 position)
+    {
+        Matrix acc_z = new Matrix(new double[,] { { position.x, position.y, position.z, 0, 0, 0, 0, 0, 0 } }).Transpose();
+        //예측값 계산
+        pos_x_p = A * pos_x;
+        pos_P_p_trk = A * pos_P_trk * A.Transpose() + pos_Q_trk;
+
+        //칼만 이득
+        pos_K_trk = pos_P_p_trk * pos_H_trk.Transpose() * (pos_H_trk * pos_P_p_trk * pos_H_trk.Transpose() + pos_R_trk).Inverse();
+
+        //추정값
+        pos_x = pos_x_p + pos_K_trk * (this.acc_z - pos_H_trk * pos_x_p);
+
+        //오차 공분산
+        pos_P_trk = pos_P_p_trk - pos_K_trk * pos_H_trk * pos_P_p_trk;
+
+        //반환
+        return new Vector3((float)pos_x[1, 1].Re, (float)pos_x[2, 1].Re, (float)pos_x[3, 1].Re);
     }
 }
