@@ -102,10 +102,10 @@ namespace Valve.VR
 
         private void FixedUpdate()
         {
-            viveDeltaTime = Time.realtimeSinceStartup - vivePrevTime;
-            viveVelocity = (transform.localPosition - vivePrevPos) / viveDeltaTime;
-            vivePrevPos = transform.localPosition;
-            vivePrevTime = Time.realtimeSinceStartup;
+            //viveDeltaTime = Time.realtimeSinceStartup - vivePrevTime;
+            //viveVelocity = (transform.localPosition - vivePrevPos) / viveDeltaTime;
+            //vivePrevPos = transform.localPosition;
+            //vivePrevTime = Time.realtimeSinceStartup;
             //Debug.Log("Velocity : " + viveVelocity);
         }
 
