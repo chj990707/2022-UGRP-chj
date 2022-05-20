@@ -1,9 +1,8 @@
-using UnityEngine;
+using CSML;
 using System;
 using System.IO.Ports;
-using CSML;
+using UnityEngine;
 using Valve.VR;
-using System.Collections;
 
 public class IMU_Sensor_Object : MonoBehaviour
 {
@@ -52,7 +51,7 @@ public class IMU_Sensor_Object : MonoBehaviour
     Matrix pos_x = new Matrix(9, 1);
     Matrix pos_x_p = new Matrix(9, 1);
 
-    GameObject tracker;
+    public GameObject tracker;
     Custom_Tracked_Object tracker_script;
 
     void Start()
@@ -61,7 +60,6 @@ public class IMU_Sensor_Object : MonoBehaviour
         m_SerialPort.Open();
         rotPrevTime = Time.realtimeSinceStartup;
         posPrevTime = Time.realtimeSinceStartup;
-        tracker = GameObject.Find("Capsule");
         tracker_script = tracker.GetComponent<Custom_Tracked_Object>();
         rot_H = Matrix.Identity(4);
         rot_Q = Matrix.Identity(4) * 10;
@@ -158,13 +156,13 @@ public class IMU_Sensor_Object : MonoBehaviour
                                           { 0, 0, 0, 0, 0, 0, 0, 1, 0},
                                           { 0, 0, 0, 0, 0, 0, 0, 0, 1}});
 
-        Vector3 kalman_vel = Kalman_position_IMU(pos_A, accel);
+        Vector3 kalman_pos = Kalman_position_IMU(pos_A, accel);
 
         if (syncRotWithTracker)
         {
             transform.position = tracker.transform.position;
         }
-        else transform.position = transform.position + kalman_vel * rotDeltaTime;
+        else transform.position = kalman_pos;
 
         rotPrevTime = Time.realtimeSinceStartup;
         posPrevTime = Time.realtimeSinceStartup;

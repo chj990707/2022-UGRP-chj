@@ -38,7 +38,7 @@ RenderSettings:
   m_ReflectionIntensity: 1
   m_CustomReflection: {fileID: 0}
   m_Sun: {fileID: 705507994}
-  m_IndirectSpecularColor: {r: 0.18028378, g: 0.22571412, b: 0.30692285, a: 1}
+  m_IndirectSpecularColor: {r: 0.18028331, g: 0.2257133, b: 0.3069217, a: 1}
   m_UseRadianceAmbientProbe: 0
 --- !u!157 &3
 LightmapSettings:
@@ -331,6 +331,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 94d7fea618fc78144b3c4fe725665791, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  fusion: {fileID: 1554373872}
   index: 3
 --- !u!136 &1301118303
 CapsuleCollider:
@@ -420,7 +421,6 @@ GameObject:
   - component: {fileID: 1554373876}
   - component: {fileID: 1554373875}
   - component: {fileID: 1554373874}
-  - component: {fileID: 1554373873}
   - component: {fileID: 1554373877}
   m_Layer: 0
   m_Name: Cylinder
@@ -429,20 +429,6 @@ GameObject:
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
   m_IsActive: 1
---- !u!136 &1554373873
-CapsuleCollider:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1554373872}
-  m_Material: {fileID: 0}
-  m_IsTrigger: 0
-  m_Enabled: 1
-  m_Radius: 0.5000001
-  m_Height: 2
-  m_Direction: 1
-  m_Center: {x: 0.000000059604645, y: 0, z: -0.00000008940697}
 --- !u!23 &1554373874
 MeshRenderer:
   m_ObjectHideFlags: 0
@@ -519,3 +505,5 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   syncRotWithTracker: 0
+  use_LPF_gyro: 0
+  tracker: {fileID: 1301118301}

@@ -8,6 +8,8 @@ namespace Valve.VR
 {
     public class Custom_Tracked_Object : MonoBehaviour
     {
+        public GameObject fusion;
+        IMU_Sensor_Object fusion_script;
         Vector3 vivePrevPos;
         public Vector3 viveVelocity { get; private set; }
         float vivePrevTime;
@@ -37,8 +39,11 @@ namespace Valve.VR
         public EIndex index;
 
         public bool isValid { get; private set; }
-
-        private void OnNewPoses(TrackedDevicePose_t[] poses)
+        void Start()
+        {
+            fusion_script = fusion.GetComponent<IMU_Sensor_Object>();
+        }
+            private void OnNewPoses(TrackedDevicePose_t[] poses)
         {
             if (index == EIndex.None)
                 return;
