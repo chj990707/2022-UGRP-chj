@@ -117,12 +117,13 @@ public class IMU_Sensor_Object : MonoBehaviour
 
 
                 Vector3 normalized_acc = Vector3.Normalize(new Vector3(-accel_y, -accel_x, accel_z));
-                Debug.Log("Normalized Acceleration : " + normalized_acc);
                 Vector3 acc_euler_without_roll = Quaternion.FromToRotation(normalized_acc, Vector3.up).eulerAngles;
-                Debug.Log("acceleration orientation without roll: " + acc_euler_without_roll);
                 Vector3 acc_euler = new Vector3(acc_euler_without_roll.x, transform.rotation.eulerAngles.y, acc_euler_without_roll.z);
-                Debug.Log("acceleration orientation: " + acc_euler);
                 Vector3 gyro_LPF = LPF_rotation_IMU(new Vector3(gyro_pitch, gyro_roll, gyro_yaw));
+                
+                //Debug.Log("Normalized Acceleration : " + normalized_acc);
+                //Debug.Log("acceleration orientation without roll: " + acc_euler_without_roll);
+                //Debug.Log("acceleration orientation: " + acc_euler);
 
                 if (syncRotWithTracker)
                 {
@@ -159,13 +160,7 @@ public class IMU_Sensor_Object : MonoBehaviour
                     transform.rotation = transform.rotation * Quaternion.Euler(new Vector3(gyro_pitch, gyro_roll, gyro_yaw));
                 }
                 Debug.Log("Current orientation : " + transform.rotation.eulerAngles);
-                //Debug.Log("Kalman rotation : " + kalman_rot.eulerAngles);
-                //Debug.Log("rotation : " + rot.eulerAngles);
-                //Debug.Log("Kalman Velocity : " + );
 
-                //Debug.Log("left handed 가속도 : " + ((-new Vector3(-accel_y, -accel_x, accel_z))).ToString() + "g");
-                //Debug.Log("global 가속도 : " + (transform.rotation * (-new Vector3(-accel_y, -accel_x, accel_z))).ToString() + "g"); // 왜 inverse가 아닌가?
-                //Debug.Log("Global 기준 IMU의 y축 : " + (transform.rotation * (new Vector3(0, 1, 0))).ToString());
                 pos_A = new Matrix(new double[,] { { 1, 0, 0},
                                                    { 0, 1, 0},
                                                    { 0, 0, 1}});
@@ -185,14 +180,14 @@ public class IMU_Sensor_Object : MonoBehaviour
                                               { 0, 0, 0, 0, 0, 0, 1, 0, 0},
                                               { 0, 0, 0, 0, 0, 0, 0, 1, 0},
                                               { 0, 0, 0, 0, 0, 0, 0, 0, 1}});
-
+                
                 Vector3 kalman_pos = Kalman_position_IMU(pos_A, accel);
 
                 if (syncRotWithTracker)
                 {
                     transform.position = tracker.transform.position;
                 }
-                //else transform.position = kalman_pos;
+                else transform.position = kalman_pos;
 
                 rotPrevTime = Time.realtimeSinceStartup;
                 posPrevTime = Time.realtimeSinceStartup;
@@ -230,6 +225,14 @@ public class IMU_Sensor_Object : MonoBehaviour
         return kalman_rot;
     }
 
+    public Quaternion Change_rotation_TRK(Quaternion input)
+    {
+        transform.rotation = input;
+        rot_x = new Matrix(new double[,] { { input.x }, { input.y }, { input.z }, { input.w } });
+        rotPrevTime = Time.realtimeSinceStartup;
+        return transform.rotation;
+    }
+
     Vector3 LPF_rotation_IMU(Vector3 Input)
     {
         rot_LPF_x = LPF_alpha * rot_LPF_x + (1 - LPF_alpha) * Input;
@@ -238,7 +241,7 @@ public class IMU_Sensor_Object : MonoBehaviour
 
     Vector3 Kalman_position_IMU(Matrix A, Vector3 accel)
     {
-        Matrix acc_z = new Matrix(new double[,] { { 0, 0, 0, 0, 0, 0, accel.x, accel.y, accel.z } }).Transpose();
+        Matrix acc_z = new Matrix(new double[,] { {accel.x, accel.y, accel.z } }).Transpose();
         //예측값 계산
         //vel_x_p = A * vel_x + acc_z;
         //vel_P_p = A * vel_P * A.Transpose() + vel_Q;
@@ -248,8 +251,11 @@ public class IMU_Sensor_Object : MonoBehaviour
         //칼만 이득
         pos_K_acc = pos_P_p_acc * pos_H_acc.Transpose() * (pos_H_acc * pos_P_p_acc * pos_H_acc.Transpose() + pos_R_acc).Inverse();
 
+        //Debug.Log("pos_H * pos_x_p : " + (pos_H_acc * pos_x_p).Transpose());
+
         //추정값
-        pos_x = pos_x_p + pos_K_acc * (this.acc_z - pos_H_acc * pos_x_p);
+        pos_x = pos_x_p + pos_K_acc * (acc_z - pos_H_acc * pos_x_p);
+        Debug.Log("pos_x : "+ pos_x.Transpose());
 
         //오차 공분산
         pos_P_acc = pos_P_p_acc - pos_K_acc * pos_H_acc * pos_P_p_acc;
@@ -257,9 +263,35 @@ public class IMU_Sensor_Object : MonoBehaviour
         //반환
         return new Vector3((float)pos_x[1, 1].Re, (float)pos_x[2, 1].Re, (float)pos_x[3, 1].Re);
     }
-    public Vector3 Kalman_position_TRK(Matrix A, Vector3 position)
+
+    public Vector3 Change_position_LPF_TRK(Vector3 input)
     {
-        Matrix acc_z = new Matrix(new double[,] { { position.x, position.y, position.z, 0, 0, 0, 0, 0, 0 } }).Transpose();
+        transform.position = input;
+        posDeltaTime = Time.realtimeSinceStartup - posPrevTime;
+        pos_x[4, 1].Re = (pos_x[1, 1].Re - input.x) / posDeltaTime * 0.7f + pos_x[4, 1].Re * 0.3f;
+        pos_x[5, 1].Re = (pos_x[2, 1].Re - input.y) / posDeltaTime * 0.7f + pos_x[5, 1].Re * 0.3f;
+        pos_x[6, 1].Re = (pos_x[3, 1].Re - input.z) / posDeltaTime * 0.7f + pos_x[6, 1].Re * 0.3f;
+        pos_x[1, 1].Re = input.x;
+        pos_x[2, 1].Re = input.y;
+        pos_x[3, 1].Re = input.z;
+        posPrevTime = Time.realtimeSinceStartup;
+        Debug.Log("Changed position, pos_x : " + pos_x.Transpose());
+        return transform.position;
+    }
+    public Vector3 Kalman_position_TRK(Vector3 position)
+    {
+        posDeltaTime = Time.realtimeSinceStartup - posPrevTime;
+
+        Matrix A = new Matrix(new double[,]{ { 1, 0, 0, posDeltaTime, 0, 0, 0.5f*posDeltaTime*posDeltaTime, 0, 0},
+                                              { 0, 1, 0, 0, posDeltaTime, 0, 0, 0.5f*posDeltaTime*posDeltaTime, 0},
+                                              { 0, 0, 1, 0, 0, posDeltaTime, 0, 0, 0.5f*posDeltaTime*posDeltaTime},
+                                              { 0, 0, 0, 1, 0, 0, posDeltaTime, 0, 0},
+                                              { 0, 0, 0, 0, 1, 0, 0, posDeltaTime, 0},
+                                              { 0, 0, 0, 0, 0, 1, 0, 0, posDeltaTime},
+                                              { 0, 0, 0, 0, 0, 0, 1, 0, 0},
+                                              { 0, 0, 0, 0, 0, 0, 0, 1, 0},
+                                              { 0, 0, 0, 0, 0, 0, 0, 0, 1}});
+        Matrix pos_z = new Matrix(new double[,] { { position.x, position.y, position.z } }).Transpose();
         //예측값 계산
         pos_x_p = A * pos_x;
         pos_P_p_trk = A * pos_P_trk * A.Transpose() + pos_Q_trk;
@@ -268,12 +300,15 @@ public class IMU_Sensor_Object : MonoBehaviour
         pos_K_trk = pos_P_p_trk * pos_H_trk.Transpose() * (pos_H_trk * pos_P_p_trk * pos_H_trk.Transpose() + pos_R_trk).Inverse();
 
         //추정값
-        pos_x = pos_x_p + pos_K_trk * (this.acc_z - pos_H_trk * pos_x_p);
+        pos_x = pos_x_p + pos_K_trk * (pos_z - pos_H_trk * pos_x_p);
 
         //오차 공분산
         pos_P_trk = pos_P_p_trk - pos_K_trk * pos_H_trk * pos_P_p_trk;
 
+        posPrevTime = Time.realtimeSinceStartup;
+        transform.position = new Vector3((float)pos_x[1, 1].Re, (float)pos_x[2, 1].Re, (float)pos_x[3, 1].Re);
         //반환
         return new Vector3((float)pos_x[1, 1].Re, (float)pos_x[2, 1].Re, (float)pos_x[3, 1].Re);
     }
+
 }

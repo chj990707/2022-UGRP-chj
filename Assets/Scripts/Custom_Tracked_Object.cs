@@ -66,7 +66,8 @@ namespace Valve.VR
 
             transform.localPosition = pose.pos;
             transform.localRotation = pose.rot;
-
+            fusion_script.Change_rotation_TRK(pose.rot);
+            fusion_script.Change_position_LPF_TRK(pose.pos);
 
             //Debug.Log("Event position : " + transform.localPosition.ToString());
             //Debug.Log("detaTime : " + deltaTime);
