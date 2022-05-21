@@ -255,7 +255,7 @@ public class IMU_Sensor_Object : MonoBehaviour
 
         //추정값
         pos_x = pos_x_p + pos_K_acc * (acc_z - pos_H_acc * pos_x_p);
-        Debug.Log("pos_x : "+ pos_x.Transpose());
+        Debug.Log("pos_x from acc : "+ pos_x.Transpose());
 
         //오차 공분산
         pos_P_acc = pos_P_p_acc - pos_K_acc * pos_H_acc * pos_P_p_acc;
@@ -282,6 +282,8 @@ public class IMU_Sensor_Object : MonoBehaviour
     {
         posDeltaTime = Time.realtimeSinceStartup - posPrevTime;
 
+        if (posDeltaTime < 0.01f) return transform.position;
+
         Matrix A = new Matrix(new double[,]{ { 1, 0, 0, posDeltaTime, 0, 0, 0.5f*posDeltaTime*posDeltaTime, 0, 0},
                                               { 0, 1, 0, 0, posDeltaTime, 0, 0, 0.5f*posDeltaTime*posDeltaTime, 0},
                                               { 0, 0, 1, 0, 0, posDeltaTime, 0, 0, 0.5f*posDeltaTime*posDeltaTime},
@@ -301,6 +303,7 @@ public class IMU_Sensor_Object : MonoBehaviour
 
         //추정값
         pos_x = pos_x_p + pos_K_trk * (pos_z - pos_H_trk * pos_x_p);
+        Debug.Log("pos_x from tracker : " + pos_x.Transpose());
 
         //오차 공분산
         pos_P_trk = pos_P_p_trk - pos_K_trk * pos_H_trk * pos_P_p_trk;
