@@ -1,5 +1,6 @@
 using CSML;
 using System;
+using System.Collections;
 using System.IO.Ports;
 using UnityEngine;
 using Valve.VR;
@@ -8,6 +9,8 @@ public class IMU_Sensor_Object : MonoBehaviour
 {
     public bool syncRotWithTracker = false;
     public bool use_LPF_gyro = false;
+    public bool use_kalman_only = false;
+    public bool use_kalman_with_LPF = false;
 
     SerialPort m_SerialPort = new SerialPort("COM6", 38400, Parity.None, 8, StopBits.One);
     string m_Data = null;
@@ -56,8 +59,8 @@ public class IMU_Sensor_Object : MonoBehaviour
 
     void Start()
     {
-        m_SerialPort.DataReceived += OnIMUReceived;
         m_SerialPort.Open();
+        StartCoroutine("OnIMUReceived");
         rotPrevTime = Time.realtimeSinceStartup;
         posPrevTime = Time.realtimeSinceStartup;
         tracker_script = tracker.GetComponent<Custom_Tracked_Object>();
@@ -84,88 +87,121 @@ public class IMU_Sensor_Object : MonoBehaviour
         rot_x = new Matrix(new double[,] { { transform.rotation.x }, { transform.rotation.y }, { transform.rotation.z }, { transform.rotation.w } });
         pos_x = new Matrix(new double[,] { { 0 }, { 0 }, { 0 }, { 0 }, { 0 }, { 0 }, { 0 }, { 0 }, { 0 } });
     }
-    void OnIMUReceived(object sender, SerialDataReceivedEventArgs e)
+
+    IEnumerator OnIMUReceived()
     {
-        while (((SerialPort)sender).BytesToRead > 0)
+        while (true)
         {
-            String m_Data = ((SerialPort)sender).ReadLine();
+            yield return new WaitUntil(() => { return m_SerialPort.BytesToRead > 0; });
+            String m_Data;
+            m_Data = m_SerialPort.ReadLine();
+            Debug.Log(m_Data);
+            try
+            {
+                string[] datas = m_Data.Split('/');
+                if (datas.Length != 6) continue;
+                rotDeltaTime = Time.realtimeSinceStartup - rotPrevTime;
+                posDeltaTime = Time.realtimeSinceStartup - posPrevTime;
+                Debug.Log("delta Time : " + rotDeltaTime);
+                float gyro_pitch = float.Parse(datas[1]) * 250f / 32768f * rotDeltaTime;
+                float gyro_roll = float.Parse(datas[0]) * 250f / 32768f * rotDeltaTime;
+                float gyro_yaw = -float.Parse(datas[2]) * 250f / 32768f * rotDeltaTime; // vive와 imu의 축 일치시키기 위해 순서 변경.
+                float accel_x = float.Parse(datas[3]) / 16384f;
+                float accel_y = float.Parse(datas[4]) / 16384f;
+                float accel_z = float.Parse(datas[5]) / 16384f;
+
+                //IMU의 가속도 센서와 자이로 센서로부터 현재 각도를 추정해야 함.
+                //VR 트래커는 손에 들고 사용할 것을 가정하기 때문에 움직임에서 큰 가속도가 발생할 것으로 예상됨.
+                //1. low-pass filter로 잡음을 제거한 자이로 센서만 사용하기
+                //2. kalman fusion을 사용해 자이로와 가속도계 융합하기(단, 가속도 벡터를 normalize)
+
+
+                Vector3 normalized_acc = Vector3.Normalize(new Vector3(-accel_y, -accel_x, accel_z));
+                Debug.Log("Normalized Acceleration : " + normalized_acc);
+                Vector3 acc_euler_without_roll = Quaternion.FromToRotation(normalized_acc, Vector3.up).eulerAngles;
+                Debug.Log("acceleration orientation without roll: " + acc_euler_without_roll);
+                Vector3 acc_euler = new Vector3(acc_euler_without_roll.x, transform.rotation.eulerAngles.y, acc_euler_without_roll.z);
+                Debug.Log("acceleration orientation: " + acc_euler);
+                Vector3 gyro_LPF = LPF_rotation_IMU(new Vector3(gyro_pitch, gyro_roll, gyro_yaw));
+
+                if (syncRotWithTracker)
+                {
+                    transform.rotation = tracker.transform.rotation;
+                }
+                else if (use_LPF_gyro)
+                {
+                    transform.rotation = transform.rotation * Quaternion.Euler(gyro_LPF);
+                }
+                else if (use_kalman_only)
+                {
+                    rot_A = new Matrix(new double[,]{ { 1,          - gyro_pitch / 2, -gyro_roll / 2, -gyro_yaw / 2},
+                                                  { gyro_pitch / 2, 1,             gyro_yaw / 2, -gyro_roll / 2},
+                                                  { gyro_roll / 2, -gyro_yaw / 2, 1,            gyro_pitch / 2},
+                                                  { gyro_yaw / 2,  gyro_roll / 2,  -gyro_pitch / 2 , 1        } });
+                    Quaternion acc_quaternion = Quaternion.Euler(acc_euler);
+
+                    Quaternion kalman_rot = Kalman_rotation_IMU(rot_A, acc_quaternion);
+                    transform.rotation = kalman_rot;
+                }
+                else if (use_kalman_with_LPF)
+                {
+                    rot_A = new Matrix(new double[,]{ { 1,          - gyro_LPF.x / 2, -gyro_LPF.y / 2, -gyro_LPF.z / 2},
+                                                  { gyro_LPF.x / 2, 1,             gyro_LPF.z / 2, -gyro_LPF.y / 2},
+                                                  { gyro_LPF.y / 2, -gyro_LPF.z / 2, 1,            gyro_LPF.x / 2},
+                                                  { gyro_LPF.z / 2,  gyro_LPF.y / 2,  -gyro_LPF.x / 2 , 1        } });
+                    Quaternion acc_quaternion = Quaternion.Euler(acc_euler);
+
+                    Quaternion kalman_rot = Kalman_rotation_IMU(rot_A, acc_quaternion);
+                    transform.rotation = kalman_rot;
+                }
+                else
+                {
+                    transform.rotation = transform.rotation * Quaternion.Euler(new Vector3(gyro_pitch, gyro_roll, gyro_yaw));
+                }
+                Debug.Log("Current orientation : " + transform.rotation.eulerAngles);
+                //Debug.Log("Kalman rotation : " + kalman_rot.eulerAngles);
+                //Debug.Log("rotation : " + rot.eulerAngles);
+                //Debug.Log("Kalman Velocity : " + );
+
+                //Debug.Log("left handed 가속도 : " + ((-new Vector3(-accel_y, -accel_x, accel_z))).ToString() + "g");
+                //Debug.Log("global 가속도 : " + (transform.rotation * (-new Vector3(-accel_y, -accel_x, accel_z))).ToString() + "g"); // 왜 inverse가 아닌가?
+                //Debug.Log("Global 기준 IMU의 y축 : " + (transform.rotation * (new Vector3(0, 1, 0))).ToString());
+                pos_A = new Matrix(new double[,] { { 1, 0, 0},
+                                                   { 0, 1, 0},
+                                                   { 0, 0, 1}});
+
+                //방향 맞는지 다시 확인 필요
+                Vector3 accel = (transform.rotation * (-new Vector3(-accel_y, -accel_x, accel_z)) + new Vector3(0, 1, 0)) * 9.8f;
+
+                Debug.Log("global 가속도(g 보상) : " + accel.ToString() + "m/s^2");
+
+
+                pos_A = new Matrix(new double[,]{ { 1, 0, 0, posDeltaTime, 0, 0, 0.5f*posDeltaTime*posDeltaTime, 0, 0},
+                                              { 0, 1, 0, 0, posDeltaTime, 0, 0, 0.5f*posDeltaTime*posDeltaTime, 0},
+                                              { 0, 0, 1, 0, 0, posDeltaTime, 0, 0, 0.5f*posDeltaTime*posDeltaTime},
+                                              { 0, 0, 0, 1, 0, 0, posDeltaTime, 0, 0},
+                                              { 0, 0, 0, 0, 1, 0, 0, posDeltaTime, 0},
+                                              { 0, 0, 0, 0, 0, 1, 0, 0, posDeltaTime},
+                                              { 0, 0, 0, 0, 0, 0, 1, 0, 0},
+                                              { 0, 0, 0, 0, 0, 0, 0, 1, 0},
+                                              { 0, 0, 0, 0, 0, 0, 0, 0, 1}});
+
+                Vector3 kalman_pos = Kalman_position_IMU(pos_A, accel);
+
+                if (syncRotWithTracker)
+                {
+                    transform.position = tracker.transform.position;
+                }
+                //else transform.position = kalman_pos;
+
+                rotPrevTime = Time.realtimeSinceStartup;
+                posPrevTime = Time.realtimeSinceStartup;
+            }
+            catch(Exception e)
+            {
+                continue;
+            }
         }
-        //Debug.Log(m_Data);
-        string[] datas = m_Data.Split('/');
-        rotDeltaTime = Time.realtimeSinceStartup - rotPrevTime;
-        posDeltaTime = Time.realtimeSinceStartup - posPrevTime;
-        Debug.Log("delta Time : " + rotDeltaTime);
-        float gyro_pitch = float.Parse(datas[1]) * 250f / 32768f * rotDeltaTime;
-        float gyro_roll = float.Parse(datas[0]) * 250f / 32768f * rotDeltaTime;
-        float gyro_yaw = -float.Parse(datas[2]) * 250f / 32768f * rotDeltaTime; // vive와 imu의 축 일치시키기 위해 순서 변경.
-        float accel_x = float.Parse(datas[3]) / 16384f;
-        float accel_y = float.Parse(datas[4]) / 16384f;
-        float accel_z = float.Parse(datas[5]) / 16384f;
-        //IMU의 가속도 센서와 자이로 센서로부터 현재 각도를 추정해야 함.
-        //VR 트래커는 손에 들고 사용할 것을 가정하기 때문에 움직임에서 큰 가속도가 발생할 것으로 예상됨.
-        //1. low-pass filter로 잡음을 제거한 자이로 센서만 사용하기
-        //2. kalman fusion을 사용해 자이로와 가속도계 융합하기(단, 가속도 벡터를 normalize)
-
-        if (syncRotWithTracker)
-        {
-            transform.rotation = tracker.transform.rotation;
-        }
-        else if (use_LPF_gyro)
-        {
-            transform.rotation = transform.rotation * Quaternion.Euler(LPF_rotation_IMU(new Vector3(gyro_pitch, gyro_roll, gyro_yaw)));
-        }
-        else 
-        {
-            rot_A = new Matrix(new double[,]{ { 1,          - gyro_pitch / 2, -gyro_roll / 2, -gyro_yaw / 2},
-                                              { gyro_pitch / 2, 1,             gyro_yaw / 2, -gyro_roll / 2},
-                                              { gyro_roll / 2, -gyro_yaw / 2, 1,            gyro_pitch / 2},
-                                              { gyro_yaw / 2,  gyro_roll / 2,  -gyro_pitch / 2 , 1        } });
-            Vector3 normalized_acc = Vector3.Normalize(new Vector3(-accel_y, -accel_x, accel_z));
-            double acc_pitch = Math.Asin(normalized_acc.x);
-            double acc_roll = Math.Asin(-normalized_acc.y / Math.Cos(acc_pitch));
-            Quaternion acc_quaternion = Quaternion.Euler((float)acc_pitch, (float)acc_roll, transform.rotation.eulerAngles.z);
-
-            Quaternion kalman_rot = Kalman_rotation_IMU(rot_A, acc_quaternion);
-            transform.rotation = kalman_rot; 
-        }
-        //Debug.Log("Kalman rotation : " + kalman_rot.eulerAngles);
-        //Debug.Log("rotation : " + rot.eulerAngles);
-        //Debug.Log("Kalman Velocity : " + );
-
-        //Debug.Log("left handed 가속도 : " + ((-new Vector3(-accel_y, -accel_x, accel_z))).ToString() + "g");
-        //Debug.Log("global 가속도 : " + (transform.rotation * (-new Vector3(-accel_y, -accel_x, accel_z))).ToString() + "g"); // 왜 inverse가 아닌가?
-        //Debug.Log("Global 기준 IMU의 y축 : " + (transform.rotation * (new Vector3(0, 1, 0))).ToString());
-        pos_A = new Matrix(new double[,] { { 1, 0, 0},
-                                               { 0, 1, 0},
-                                               { 0, 0, 1}});
-
-        //방향 맞는지 다시 확인 필요
-        throw new NotImplementedException();
-        Vector3 accel = (transform.rotation * (-new Vector3(-accel_y, -accel_x, accel_z)) + new Vector3(0, 1, 0)) * 9.8f;
-
-        Debug.Log("global 가속도(g 보상) : " + accel.ToString() + "m/s^2");
-
-
-        pos_A = new Matrix(new double[,]{ { 1, 0, 0, posDeltaTime, 0, 0, 0.5f*posDeltaTime*posDeltaTime, 0, 0},
-                                          { 0, 1, 0, 0, posDeltaTime, 0, 0, 0.5f*posDeltaTime*posDeltaTime, 0},
-                                          { 0, 0, 1, 0, 0, posDeltaTime, 0, 0, 0.5f*posDeltaTime*posDeltaTime},
-                                          { 0, 0, 0, 1, 0, 0, posDeltaTime, 0, 0},
-                                          { 0, 0, 0, 0, 1, 0, 0, posDeltaTime, 0},
-                                          { 0, 0, 0, 0, 0, 1, 0, 0, posDeltaTime},
-                                          { 0, 0, 0, 0, 0, 0, 1, 0, 0},
-                                          { 0, 0, 0, 0, 0, 0, 0, 1, 0},
-                                          { 0, 0, 0, 0, 0, 0, 0, 0, 1}});
-
-        Vector3 kalman_pos = Kalman_position_IMU(pos_A, accel);
-
-        if (syncRotWithTracker)
-        {
-            transform.position = tracker.transform.position;
-        }
-        else transform.position = kalman_pos;
-
-        rotPrevTime = Time.realtimeSinceStartup;
-        posPrevTime = Time.realtimeSinceStartup;
     }
 
     void OnApplicationQuit()
