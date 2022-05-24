@@ -8,6 +8,9 @@ namespace Valve.VR
 {
     public class Custom_Tracked_Object : MonoBehaviour
     {
+        public bool force_sync_Rotation = true;
+        public bool force_sync_Position = true;
+
         public GameObject fusion;
         IMU_Sensor_Object fusion_script;
         Vector3 vivePrevPos;
@@ -66,8 +69,8 @@ namespace Valve.VR
 
             transform.localPosition = pose.pos;
             transform.localRotation = pose.rot;
-            fusion_script.Change_rotation_TRK(pose.rot);
-            fusion_script.Kalman_position_TRK(pose.pos);
+            if (force_sync_Rotation) fusion_script.Change_rotation_TRK(pose.rot);
+            if (force_sync_Position) fusion_script.Kalman_position_TRK(pose.pos);
 
             //Debug.Log("Event position : " + transform.localPosition.ToString());
             //Debug.Log("detaTime : " + deltaTime);

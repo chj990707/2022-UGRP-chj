@@ -10,7 +10,7 @@ public class IMU_Sensor_Object : MonoBehaviour
     public bool syncRotWithTracker = false;
     public bool use_LPF_gyro = false;
     public bool use_kalman_only = false;
-    public bool use_kalman_with_LPF = false;
+    public bool use_kalman_with_LPF = true;
 
     SerialPort m_SerialPort = new SerialPort("COM6", 38400, Parity.None, 8, StopBits.One);
     string m_Data = null;
@@ -21,7 +21,9 @@ public class IMU_Sensor_Object : MonoBehaviour
     int readLine = 0;
 
     Vector3 rot_LPF_x = new Vector3(0,0,0);
-    float LPF_alpha = 0.7f;
+    Vector3 acc_LPF_x = new Vector3(0, 0, 0);
+    float LPF_rot_alpha = 0.7f;
+    float LPF_acc_alpha = 0.7f;
 
     Matrix rot_A = new Matrix(4, 4);
     Matrix rot_H = new Matrix(4, 4);
@@ -55,10 +57,12 @@ public class IMU_Sensor_Object : MonoBehaviour
     Matrix pos_x_p = new Matrix(9, 1);
 
     public GameObject tracker;
+    Transform accel_gauge;
     Custom_Tracked_Object tracker_script;
 
     void Start()
     {
+        accel_gauge = transform.Find("Cube");
         m_SerialPort.Open();
         StartCoroutine("OnIMUReceived");
         rotPrevTime = Time.realtimeSinceStartup;
@@ -95,14 +99,14 @@ public class IMU_Sensor_Object : MonoBehaviour
             yield return new WaitUntil(() => { return m_SerialPort.BytesToRead > 0; });
             String m_Data;
             m_Data = m_SerialPort.ReadLine();
-            Debug.Log(m_Data);
+            //Debug.Log(m_Data);
             try
             {
                 string[] datas = m_Data.Split('/');
                 if (datas.Length != 6) continue;
                 rotDeltaTime = Time.realtimeSinceStartup - rotPrevTime;
                 posDeltaTime = Time.realtimeSinceStartup - posPrevTime;
-                Debug.Log("delta Time : " + rotDeltaTime);
+                //Debug.Log("delta Time : " + rotDeltaTime);
                 float gyro_pitch = float.Parse(datas[1]) * 250f / 32768f * rotDeltaTime;
                 float gyro_roll = float.Parse(datas[0]) * 250f / 32768f * rotDeltaTime;
                 float gyro_yaw = -float.Parse(datas[2]) * 250f / 32768f * rotDeltaTime; // vive와 imu의 축 일치시키기 위해 순서 변경.
@@ -110,13 +114,15 @@ public class IMU_Sensor_Object : MonoBehaviour
                 float accel_y = float.Parse(datas[4]) / 16384f;
                 float accel_z = float.Parse(datas[5]) / 16384f;
 
+                Vector3 acc_LPF = LPF_accel_IMU(new Vector3(-accel_y, -accel_x, accel_z));
+
                 //IMU의 가속도 센서와 자이로 센서로부터 현재 각도를 추정해야 함.
                 //VR 트래커는 손에 들고 사용할 것을 가정하기 때문에 움직임에서 큰 가속도가 발생할 것으로 예상됨.
                 //1. low-pass filter로 잡음을 제거한 자이로 센서만 사용하기
                 //2. kalman fusion을 사용해 자이로와 가속도계 융합하기(단, 가속도 벡터를 normalize)
 
 
-                Vector3 normalized_acc = Vector3.Normalize(new Vector3(-accel_y, -accel_x, accel_z));
+                Vector3 normalized_acc = Vector3.Normalize(acc_LPF);
                 Vector3 acc_euler_without_roll = Quaternion.FromToRotation(normalized_acc, Vector3.up).eulerAngles;
                 Vector3 acc_euler = new Vector3(acc_euler_without_roll.x, transform.rotation.eulerAngles.y, acc_euler_without_roll.z);
                 Vector3 gyro_LPF = LPF_rotation_IMU(new Vector3(gyro_pitch, gyro_roll, gyro_yaw));
@@ -159,14 +165,12 @@ public class IMU_Sensor_Object : MonoBehaviour
                 {
                     transform.rotation = transform.rotation * Quaternion.Euler(new Vector3(gyro_pitch, gyro_roll, gyro_yaw));
                 }
-                Debug.Log("Current orientation : " + transform.rotation.eulerAngles);
+                //Debug.Log("Current orientation : " + transform.rotation.eulerAngles);
 
-                pos_A = new Matrix(new double[,] { { 1, 0, 0},
-                                                   { 0, 1, 0},
-                                                   { 0, 0, 1}});
+                accel_gauge.localPosition = (acc_LPF + Quaternion.Inverse(transform.rotation) * new Vector3(0, -1, 0)) * 9.8f;
 
                 //방향 맞는지 다시 확인 필요
-                Vector3 accel = (transform.rotation * (-new Vector3(-accel_y, -accel_x, accel_z)) + new Vector3(0, 1, 0)) * 9.8f;
+                Vector3 accel = (transform.rotation * (acc_LPF) + new Vector3(0, -1, 0)) * 9.8f;
 
                 Debug.Log("global 가속도(g 보상) : " + accel.ToString() + "m/s^2");
 
@@ -235,8 +239,13 @@ public class IMU_Sensor_Object : MonoBehaviour
 
     Vector3 LPF_rotation_IMU(Vector3 Input)
     {
-        rot_LPF_x = LPF_alpha * rot_LPF_x + (1 - LPF_alpha) * Input;
+        rot_LPF_x = LPF_acc_alpha * rot_LPF_x + (1 - LPF_acc_alpha) * Input;
         return rot_LPF_x;
+    }
+    Vector3 LPF_accel_IMU(Vector3 Input)
+    {
+        acc_LPF_x = LPF_rot_alpha * acc_LPF_x + (1 - LPF_rot_alpha) * Input;
+        return acc_LPF_x;
     }
 
     Vector3 Kalman_position_IMU(Matrix A, Vector3 accel)
