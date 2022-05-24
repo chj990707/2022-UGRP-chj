@@ -2,11 +2,13 @@ using CSML;
 using System;
 using System.Collections;
 using System.IO.Ports;
+using System.IO;
 using UnityEngine;
 using Valve.VR;
 
 public class IMU_Sensor_Object : MonoBehaviour
 {
+    string path = @"C:\Users\JYP\Desktop\Calibration\Text.txt";
     public bool syncRotWithTracker = false;
     public bool use_LPF_gyro = false;
     public bool use_kalman_only = false;
@@ -110,9 +112,10 @@ public class IMU_Sensor_Object : MonoBehaviour
                 float gyro_pitch = float.Parse(datas[1]) * 250f / 32768f * rotDeltaTime;
                 float gyro_roll = float.Parse(datas[0]) * 250f / 32768f * rotDeltaTime;
                 float gyro_yaw = -float.Parse(datas[2]) * 250f / 32768f * rotDeltaTime; // vive와 imu의 축 일치시키기 위해 순서 변경.
-                float accel_x = float.Parse(datas[3]) / 16384f;
-                float accel_y = float.Parse(datas[4]) / 16384f;
-                float accel_z = float.Parse(datas[5]) / 16384f;
+                float accel_x = 1/1.00041f * (float.Parse(datas[3]) / 16384f - 0.00272f);
+                float accel_y = 1/0.99970f * (float.Parse(datas[4]) / 16384f - 0.01545f);
+                float accel_z = 1/1.01362f * (float.Parse(datas[5]) / 16384f - 0.00097f);
+
 
                 Vector3 acc_LPF = LPF_accel_IMU(new Vector3(-accel_y, -accel_x, accel_z));
 
@@ -173,6 +176,7 @@ public class IMU_Sensor_Object : MonoBehaviour
                 Vector3 accel = (transform.rotation * (acc_LPF) + new Vector3(0, -1, 0)) * 9.8f;
 
                 Debug.Log("global 가속도(g 보상) : " + accel.ToString() + "m/s^2");
+                Debug.Log("global 가속도 크기 : " + (acc_LPF.magnitude * 9.8f) + "m/s^2");
 
 
                 pos_A = new Matrix(new double[,]{ { 1, 0, 0, posDeltaTime, 0, 0, 0.5f*posDeltaTime*posDeltaTime, 0, 0},
