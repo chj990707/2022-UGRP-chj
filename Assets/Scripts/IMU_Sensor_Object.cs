@@ -8,7 +8,9 @@ using Valve.VR;
 
 public class IMU_Sensor_Object : MonoBehaviour
 {
-    string path = @"C:\Users\JYP\Desktop\Calibration\Text.txt";
+    FileStream fs;
+    StreamWriter sw;
+    string path = @"C:\Users\JYP\Desktop\Calibration-chj\Text.txt";
     public bool syncRotWithTracker = false;
     public bool use_LPF_gyro = false;
     public bool use_kalman_only = false;
@@ -25,7 +27,7 @@ public class IMU_Sensor_Object : MonoBehaviour
     Vector3 rot_LPF_x = new Vector3(0,0,0);
     Vector3 acc_LPF_x = new Vector3(0, 0, 0);
     float LPF_rot_alpha = 0.7f;
-    float LPF_acc_alpha = 0.7f;
+    float LPF_acc_alpha = 0.5f;
 
     Matrix rot_A = new Matrix(4, 4);
     Matrix rot_H = new Matrix(4, 4);
@@ -64,6 +66,8 @@ public class IMU_Sensor_Object : MonoBehaviour
 
     void Start()
     {
+        fs = new FileStream(path, FileMode.Create, FileAccess.Write);
+        sw = new StreamWriter(fs);
         accel_gauge = transform.Find("Cube");
         m_SerialPort.Open();
         StartCoroutine("OnIMUReceived");
@@ -112,10 +116,12 @@ public class IMU_Sensor_Object : MonoBehaviour
                 float gyro_pitch = float.Parse(datas[1]) * 250f / 32768f * rotDeltaTime;
                 float gyro_roll = float.Parse(datas[0]) * 250f / 32768f * rotDeltaTime;
                 float gyro_yaw = -float.Parse(datas[2]) * 250f / 32768f * rotDeltaTime; // vive와 imu의 축 일치시키기 위해 순서 변경.
-                float accel_x = 1/1.00041f * (float.Parse(datas[3]) / 16384f - 0.00272f);
-                float accel_y = 1/0.99970f * (float.Parse(datas[4]) / 16384f - 0.01545f);
-                float accel_z = 1/1.01362f * (float.Parse(datas[5]) / 16384f - 0.00097f);
-
+                float accel_x = 1 / 1.00041f * (float.Parse(datas[3]) / 16384f - 0.00272f);
+                float accel_y = 1 / 0.99970f * (float.Parse(datas[4]) / 16384f - 0.01545f);
+                float accel_z = 1 / 1.01362f * (float.Parse(datas[5]) / 16384f - 0.00097f);
+                //float accel_x = float.Parse(datas[3]) / 16384f;
+                //float accel_y = float.Parse(datas[4]) / 16384f;
+                //float accel_z = float.Parse(datas[5]) / 16384f;
 
                 Vector3 acc_LPF = LPF_accel_IMU(new Vector3(-accel_y, -accel_x, accel_z));
 
@@ -170,13 +176,14 @@ public class IMU_Sensor_Object : MonoBehaviour
                 }
                 //Debug.Log("Current orientation : " + transform.rotation.eulerAngles);
 
-                accel_gauge.localPosition = (acc_LPF + Quaternion.Inverse(transform.rotation) * new Vector3(0, -1, 0)) * 9.8f;
-
                 //방향 맞는지 다시 확인 필요
-                Vector3 accel = (transform.rotation * (acc_LPF) + new Vector3(0, -1, 0)) * 9.8f;
+                Vector3 accel = (transform.rotation * (acc_LPF) + new Vector3(0, -1, 0) + new Vector3(0.01362f, 0.005068f, 0.004458f)) * 9.8f; //   G compensation?
 
-                Debug.Log("global 가속도(g 보상) : " + accel.ToString() + "m/s^2");
-                Debug.Log("global 가속도 크기 : " + (acc_LPF.magnitude * 9.8f) + "m/s^2");
+                accel_gauge.position = transform.position + accel * 5;
+
+                Debug.Log("global 가속도(g 보상) : (" + accel.x + "," + accel.y + "," + accel.z + ") m/s^2");
+                //sw.WriteLine(accel.x + "\t" + accel.y + "\t" + accel.z);
+                Debug.Log("global 가속도 크기 : " + (accel.magnitude) + "m/s^2");
 
 
                 pos_A = new Matrix(new double[,]{ { 1, 0, 0, posDeltaTime, 0, 0, 0.5f*posDeltaTime*posDeltaTime, 0, 0},
@@ -210,6 +217,7 @@ public class IMU_Sensor_Object : MonoBehaviour
     void OnApplicationQuit()
     {
         m_SerialPort.Close();
+        fs.Close();
     }
 
     Quaternion Kalman_rotation_IMU(Matrix A, Quaternion input)
